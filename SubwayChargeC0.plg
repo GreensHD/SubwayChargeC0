@@ -6,14 +6,15 @@
 --------------------Configuration: SubwayChargeC0 - Win32 Debug--------------------
 </h3>
 <h3>Command Lines</h3>
-Creating temporary file "C:\DOCUME~1\jiangxin\LOCALS~1\Temp\RSP76.tmp" with contents
+Creating temporary file "C:\DOCUME~1\jiangxin\LOCALS~1\Temp\RSP51.tmp" with contents
 [
 /nologo /MLd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /FR"Debug/" /Fp"Debug/SubwayChargeC0.pch" /YX /Fo"Debug/" /Fd"Debug/" /FD /GZ /c 
 "I:\TEMP\CPP\HW\SUBWAYCHARGEC0\src\SubwayCharge.cpp"
 ]
-Creating command line "cl.exe @C:\DOCUME~1\jiangxin\LOCALS~1\Temp\RSP76.tmp" 
+Creating command line "cl.exe @C:\DOCUME~1\jiangxin\LOCALS~1\Temp\RSP51.tmp" 
 <h3>Output Window</h3>
 Compiling...
+Skipping... (no relevant changes detected)
 SubwayCharge.cpp
 
 
