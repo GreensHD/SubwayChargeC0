@@ -53,5 +53,4 @@ Return        : ÕýÈ·:RET_OK
 int RemoveList(HistoryInfoNode *pHead);
 
 
-
 #endif

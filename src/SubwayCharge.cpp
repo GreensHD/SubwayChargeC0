@@ -38,36 +38,38 @@ void main(int argc, char* argv[])
 *****************************************************************************/
 void opResetProc(void)
 {
-	int i = 0;
 
-	if(g_historyInfoNodeHead != NULL) //历史消费记录链表不为空
+	if(g_historyInfoNodeHead != NULL) //历史消费记录链表不为空，则删除历史消费记录链表
 	{
-		if(RemoveList(g_historyInfoNodeHead) != RET_OK) //删除历史消费记录链表
+		if(RemoveList(g_historyInfoNodeHead) != RET_OK)
 		{
-			return;
+			return; //错误信息由RemoveList函数进行输出
 		}
 		g_historyInfoNodeHead = NULL;
 	}
+    
 	g_historyInfoNodeHead = CreateList(); //创建历史消费记录链表
-
 	if(g_historyInfoNodeHead == NULL)
 	{
-		return;
+		return; //错误信息由CreateList函数进行输出
 	}
 	
 
 	FILE *fp = NULL;
-	fp = fopen(FILENAME, "wa+"); 
+	fp = fopen(FILE_NAME, "w+"); //检测文件是否存在，如果不存在则创建，如果存在则清空 
 	if(fp == NULL)
 	{
-		apiPrintErrInfo(E99); //系统内部错误
+		apiPrintErrInfo(E99); //E99:系统内部错误
 		return;
 	}
 	fclose(fp);
 
-	for(i = 0; i < MAX_CARD_NUMBERS; i++)
+    int i = 0;
+    for(i = 0; i < MAX_CARD_NUMBERS; i++)
 	{
-		g_CardStatusInfo[i] = CARD_VALID; //将0~9的卡号设置为可用
+        //将0~9的卡号设置为可用，之所以把0号卡设为CARD_VALID是统一操作，
+        //在之后的函数中先进行卡号范围判断，再进行卡号有效性判断
+        g_CardStatusInfo[i] = CARD_VALID;
 	}
 	
 	return;
@@ -85,41 +87,56 @@ void opResetProc(void)
 *****************************************************************************/
 void opChargeProc(TravelInfo_ST* pstTravelInfo)
 {
-
-	//首先判断卡是否可用
-	if(g_CardStatusInfo[pstTravelInfo->nCardNo] == CARD_UNVAILD)
+    if(pstTravelInfo == NULL)
+    {
+        apiPrintErrInfo(E99); //E99:系统内部错误
+        return;
+    }
+    
+    int nCardNo = pstTravelInfo->nCardNo;
+    
+    //判断卡号范围是否正确
+    if((nCardNo <= 0) || (nCardNo >= MAX_CARD_NUMBERS))
+    {
+        apiPrintErrInfo(E99); //E99:系统内部错误
+        return;
+    }
+    
+	//判断卡是否注销
+	if(g_CardStatusInfo[nCardNo] == CARD_UNVAILD)
 	{
 		apiPrintErrInfo(E22); //操作失败，此票卡已经注销
 		return;
 	}
+    
 	//判断出站时间是否大于等于入站时间
 	if(apiTimeDiff(pstTravelInfo->nInHour,pstTravelInfo->nInMinute,pstTravelInfo->nOutHour,pstTravelInfo->nOutMinute) > 0)
 	{
-
 		apiPrintErrInfo(E02); //参数错误(时间关系错误)
 		apiWriteLog(0, pstTravelInfo, RET_ERROR);
 		return;
 
 	}
 
+	//判断进出站是否有效
 	int nDistance = 0;
-	int flag = 0;
-	//计算两个站点之间的距离
-	flag = apiGetDistanceBetweenTwoStation(pstTravelInfo->sInStation ,pstTravelInfo->sOutStation, &nDistance);
-	if(flag == RET_ERROR)
+	if(apiGetDistanceBetweenTwoStation(pstTravelInfo->sInStation ,pstTravelInfo->sOutStation, &nDistance) == RET_ERROR)
 	{
-
-		apiPrintOpStatusInfo(I10,pstTravelInfo->nCardNo, pstTravelInfo->nCardMoney); //输出操作状态函数,I10:扣费失败(无效路线)
+		apiPrintOpStatusInfo(I10,pstTravelInfo->nCardNo, pstTravelInfo->nCardMoney); //I10:扣费失败(无效路线)
 		apiWriteLog(0, pstTravelInfo, RET_ERROR);
 		return;
-		
 	}
-	//计算基本票价
-	int nBasePrice = ComputeBasePrice(nDistance);
+    
 	//计算扣费票价
-	int nChargePrice = ComputeChargePrice(nBasePrice,pstTravelInfo);
+	int nChargePrice = ComputeChargePrice(pstTravelInfo);
+    if(nChargePrice == -1)
+    {
+        apiPrintErrInfo(E99); //E99:系统内部错误
+    }
+    
 	//进行扣费，并将扣费记录写入链表尾
 	ChargeProcess(nChargePrice, pstTravelInfo);
+    
 	return ;
 }
 
@@ -134,35 +151,35 @@ void opChargeProc(TravelInfo_ST* pstTravelInfo)
 *****************************************************************************/
 void opQueryLogProc(QueryCond_ST* pstQueryCond)
 {
-	if(NULL == pstQueryCond)
+	if(pstQueryCond == NULL)
 	{
-		apiPrintErrInfo(E99);
+		apiPrintErrInfo(E99); //E99:系统内部错误
 		return;
 	}
 	int nTimeDiff = apiTimeDiff(pstQueryCond->nStartHour,pstQueryCond->nStartMinute,pstQueryCond->nEndHour,pstQueryCond->nEndMinute);
-	//出站时间是否大于等于进站时间
+	//查询终止时间是否大于查询开始时间
 	if(nTimeDiff > 0)
 	{
 		apiPrintErrInfo(E02);
 		return;
 	}
 
-	LogItem_ST tmpLogItem[MAX_LOG_ITEMS];
-	memset(tmpLogItem, 0, sizeof(LogItem_ST) * MAX_LOG_ITEMS);
+	LogItem_ST tmpLogItem[MAX_LOG_RECORD_NUM];
+	memset(tmpLogItem, 0, sizeof(LogItem_ST) * MAX_LOG_RECORD_NUM);
 	int i = 0, j = 0;
 	int nLogItemCnt = 0; //记录条目数
 	LogItem_ST *pLogAddr = apiGetLogAddr();
 	int nItems = apiGetLogNum();
-	//卡号为0
-	if(0 == pstQueryCond->nCardNo)
+	
+	if(pstQueryCond->nCardNo == 0) //卡号为0
 	{
 		for(i = 1; i < MAX_CARD_NUMBERS; i++)
 		{
-			if(CARD_UNVAILD == g_CardStatusInfo[i])
+			if(g_CardStatusInfo[i] == CARD_VALID)
 			{
 				for(j = 0; j < nItems; j++)
 				{
-					if((pstQueryCond->nCardNo == pLogAddr[j].nCardNo) && (RET_OK == IsCheckTimeValid(pstQueryCond,pLogAddr + j)))
+					if((i == pLogAddr[j].nCardNo) && (IsCheckTimeValid(pstQueryCond,pLogAddr + j) == RET_OK))
 					{
 						memcpy(&(tmpLogItem[nLogItemCnt]),&(pLogAddr[j]),sizeof(LogItem_ST));
 						nLogItemCnt++;
@@ -171,21 +188,18 @@ void opQueryLogProc(QueryCond_ST* pstQueryCond)
 			}
 		}
 	}
-	//卡号不为0
-	else 
+	else //卡号不为0
 	{
-		//判断卡是否有效
-		if(CARD_UNVAILD == g_CardStatusInfo[pstQueryCond->nCardNo])
+		if(g_CardStatusInfo[pstQueryCond->nCardNo] == CARD_UNVAILD) //卡无效
 		{
 			apiPrintErrInfo(E22);  
 			return;
 		}
-		//卡有效
-		else
+		else //卡有效
 		{
 			for(j = 0; j < nItems; j++)
 			{
-				if((pstQueryCond->nCardNo == pLogAddr[j].nCardNo) && (RET_OK == IsCheckTimeValid(pstQueryCond,pLogAddr + j)))
+				if((pstQueryCond->nCardNo == pLogAddr[j].nCardNo) && (IsCheckTimeValid(pstQueryCond,pLogAddr + j) ==RET_OK))
 				   
 				{
 					memcpy(&(tmpLogItem[nLogItemCnt]), &(pLogAddr[j]), sizeof(LogItem_ST));
@@ -202,9 +216,7 @@ void opQueryLogProc(QueryCond_ST* pstQueryCond)
 	}
 	else
 	{
-		//sort
 		SortByCardID(tmpLogItem, nLogItemCnt);
-
 		apiPrintLog(tmpLogItem, nLogItemCnt);
 	}
 	return;
@@ -215,14 +227,58 @@ void opQueryLogProc(QueryCond_ST* pstQueryCond)
  函 数 名  : opQueryHistoryChargeListProc
  功能描述  : 考生需要实现的接口
              完成查询指定卡号的票卡消费历史记录功能(详见试题规格说明)
+             h/H命令时自动调用该函数
  输入参数  : iCardNo  待查询的票卡卡号
  输出参数  : 无
  返 回 值  : 无
 *****************************************************************************/
 void opQueryHistoryChargeListProc(int iCardNo)
 {
+    //HistoryItem pHistoryChargeList[MAX_LOG_RECORD_NUM];
+    //memset(pHistoryChargeList, 0, MAX_LOG_RECORD_NUM*sizeof(HistoryItem));
 
-
+    int count = 0;
+    if((iCardNo < 0) || (iCardNo >= MAX_CARD_NUMBERS))
+    {
+        apiPrintErrInfo(E99); //E99:系统内部错误
+    }
+    else if(iCardNo == 0)
+    {
+        for(int i=1;i<MAX_CARD_NUMBERS;i++)
+        {
+            //注意此处不应该使用->pNext，因为FindNodeByCardNo中的参数是头结点，而不是第一个有效结点
+            HistoryInfoNode *node = g_historyInfoNodeHead;
+            
+            while(node != NULL)
+            {
+                if(FindNodeByCardNo(node,i) != NULL)
+                {
+                    count++;
+                    //注意此处应该使用->pNext
+                    apiPrintHistoryChargeList(&(node->pNext->data));
+                }
+                node = node->pNext;
+            }
+        }
+    }
+    else
+    {
+        HistoryInfoNode *node = g_historyInfoNodeHead;
+        while(node != NULL)
+        {
+            if(FindNodeByCardNo(node,iCardNo) != NULL)
+            {
+                count++;
+                apiPrintHistoryChargeList(&(node->pNext->data));
+            }
+            node = node->pNext;
+        }
+    }
+    if(count <= 0)
+    {
+        apiPrintErrInfo(E21);
+        return;
+    }
 }
 
 /*****************************************************************************
@@ -235,7 +291,33 @@ void opQueryHistoryChargeListProc(int iCardNo)
 *****************************************************************************/
 void opDestroyCardProc(int iCardNo)
 {
-
+    if((iCardNo < 0) || (iCardNo >= MAX_CARD_NUMBERS))
+    {
+        apiPrintErrInfo(E99); //E99:系统内部错误
+        return;
+    }
+    else if(iCardNo == 0)
+    {
+        if(RemoveList(g_historyInfoNodeHead) != RET_OK)
+        {
+            apiPrintErrInfo(E99); //E99:系统内部错误
+            return;
+        }
+        for(int i=0;i<MAX_CARD_NUMBERS;i++)
+        {
+            if(g_CardStatusInfo[i] == CARD_VALID)
+            {
+                apiDeleteLog(i);
+            }
+        }
+    }
+    else
+    {
+        if(g_CardStatusInfo[iCardNo] == CARD_VALID)
+        {
+            apiDeleteLog(iCardNo);
+        }
+    }
 }
 
 
@@ -251,28 +333,29 @@ void opDestroyCardProc(int iCardNo)
 *****************************************************************************/
 int ComputeBasePrice(int distance)
 {
-
-	if (0 >= distance)  
-	{
-		return 0; 
-	}
-	else if ((0 < distance) && (3 >= distance))  
-	{
-		 return 2; 
-	}
-	else if ((3 < distance) && (5 >= distance))  
-	{
-		 return 3; 
-	}
-	else if ((5 < distance) && (10 >= distance))
-	{
-		return 4; 
-	}
-	else
-	{
-		return 5;
-	}
-
+    //假设distance只有在进站和出站为同一站时才为0
+    //对于同一站的情况应有其它函数进行处理，本函数只是直接返回-1
+    //对于错误信息的输出应由调用函数进行处理
+    if(distance <= 0)
+    {
+        return -1;
+    }
+    else if((distance > 0) && (distance <= 3))
+    {
+        return 2;
+    }
+    else if((distance > 3) && (distance <= 5))
+    {
+        return 3;
+    }
+    else if((distance >5) && (distance <= 10))
+    {
+        return 4;
+    }
+    else
+    {
+        return 5;
+    }
 }
 
 /*****************************************************************************
@@ -280,27 +363,35 @@ int ComputeBasePrice(int distance)
  功能描述  : 计算起点站和终点站重合时的票价
  输入参数  : pstTravelInfo  旅客进出站信息
  输出参数  : 无
- 返 回 值  : 起点站和终点站重合时的票价
+ 返 回 值  : 起点站和终点站重合时的票价，若出错则返回-1
 *****************************************************************************/
 int GetSameStationChargePrice(TravelInfo_ST* pstTravelInfo)
 {
-	if(NULL == pstTravelInfo) //对传入参数进行判断
+    //此处只检测pstTravelInfo是否为NULL
+    //对于pstTravelInfo的逻辑正确性需要由调用函数进行判断
+    //为NULL时的错误信息显示由调用函数进行
+    if(pstTravelInfo == NULL)
 	{
 		return -1;
 	}
-	int nMoney = pstTravelInfo->nCardMoney;   //卡金额
-	CardType_EN nCardType= pstTravelInfo->enCardType;
+    
+	int nMoney = pstTravelInfo->nCardMoney; //卡金额
+	CardType_EN nCardType = pstTravelInfo->enCardType;
 	int nTimeDiff = apiTimeDiff(pstTravelInfo->nOutHour, pstTravelInfo->nOutMinute, pstTravelInfo->nInHour, pstTravelInfo->nInMinute);
 	if(nTimeDiff <= 30)
 	{
-		if(nCardType == CARDTYPE_A)  //单程票
+		if(nCardType == CARDTYPE_A) //单程票
+		{
 			return nMoney;
+		}
 		else //普通票或者老年票
+		{
 			return 0;
+		}
 	}
 	else
 	{
-		if(CARDTYPE_A == nCardType)  //单程票
+		if(nCardType == CARDTYPE_A)  //单程票
 		{
 			return (nMoney>3 ? nMoney:3);
 		}
@@ -311,6 +402,79 @@ int GetSameStationChargePrice(TravelInfo_ST* pstTravelInfo)
 	}
 }
 
+
+/*****************************************************************************
+ 函 数 名  : GetDifferentStationChargePrice
+ 功能描述  : 计算起点站和终点站不重合时的票价
+ 输入参数  : pstTravelInfo  旅客进出站信息
+ 输出参数  : 无
+ 返 回 值  : 起点站和终点站重合时的票价，若出错则返回-1
+*****************************************************************************/
+int GetDifferentStationChargePrice(TravelInfo_ST* pstTravelInfo)
+{
+    //此处只检测pstTravelInfo是否为NULL
+    //对于pstTravelInfo的逻辑正确性需要由调用函数进行判断
+    //为NULL时的错误信息显示由调用函数进行
+    if(pstTravelInfo == NULL)
+	{
+		return -1;
+	}
+
+    //计算基本票价，此处距离计算可以假设正确，因为调用函数已经进行了判断
+    int nDistance = 0;
+    apiGetDistanceBetweenTwoStation(pstTravelInfo->sInStation ,pstTravelInfo->sOutStation, &nDistance);
+	int nBasePrice = ComputeBasePrice(nDistance);
+    if(nBasePrice == -1)
+    {
+        return -1;
+    }
+    
+    if(pstTravelInfo->enCardType == CARDTYPE_A) //票卡为单程票
+    {
+        return (pstTravelInfo->nCardMoney > nBasePrice) ? pstTravelInfo->nCardMoney : nBasePrice;  
+    }
+    else //票卡为非单程票
+    {
+        int nInHour = pstTravelInfo->nInHour;
+        int nInMin = pstTravelInfo->nInMinute;
+    
+        int CompSeven = apiTimeDiff(nInHour, nInMin, 7, 0);  
+        int CompNine = apiTimeDiff(nInHour, nInMin, 9, 0);  
+        int CompSixteenThirty = apiTimeDiff(nInHour, nInMin, 16, 30);  
+        int CompEighteenThirty = apiTimeDiff(nInHour, nInMin, 18, 30);
+        int CompTen= apiTimeDiff(nInHour, nInMin, 10, 0);  
+        int CompEleven = apiTimeDiff(nInHour, nInMin, 11, 0);  
+        int CompFifteen = apiTimeDiff(nInHour, nInMin, 15, 0);                 
+        int CompSixteen = apiTimeDiff(nInHour, nInMin, 16, 0); 
+    
+        if (((CompSeven >= 0) && (CompNine < 0)) || ((CompSixteenThirty >= 0) && (CompEighteenThirty < 0))) //特殊非优惠时段
+        {
+            return nBasePrice;
+        }
+        else if (((CompTen >= 0) && (CompEleven <0))|| ((CompFifteen >= 0) && (CompSixteen < 0))) //特殊优惠时段
+        {
+            return (int)(nBasePrice*0.5); //出现小数，向下取整
+        }
+        else //非特殊时段
+        {
+            if(CARDTYPE_C == pstTravelInfo->enCardType) //普通卡
+            {
+                return nBasePrice;  
+            }
+            else if(CARDTYPE_B == pstTravelInfo->enCardType) //老年卡
+            {
+                return (int)(nBasePrice*0.9); //出现小数，向下取整
+            }
+            else
+            {
+                return -1; //出现错误
+            }
+        }
+    }
+
+}
+
+
 /*****************************************************************************
  函 数 名  : ComputeChargePrice
  功能描述  : 计算扣费票价
@@ -319,7 +483,7 @@ int GetSameStationChargePrice(TravelInfo_ST* pstTravelInfo)
  输出参数  : 无
  返 回 值  : 扣费票价
 *****************************************************************************/
-int ComputeChargePrice(int baseprice, TravelInfo_ST* pstTravelInfo)
+int ComputeChargePrice(TravelInfo_ST* pstTravelInfo)
 {
 	if(strcmp(pstTravelInfo->sInStation, pstTravelInfo->sOutStation) == 0) //同站进出
 	{
@@ -327,48 +491,7 @@ int ComputeChargePrice(int baseprice, TravelInfo_ST* pstTravelInfo)
 	}
 	else //非同站进出
 	{
-		if(pstTravelInfo->enCardType == CARDTYPE_A) //票卡为单程票
-		{
-			return (pstTravelInfo->nCardMoney > baseprice) ? pstTravelInfo->nCardMoney : baseprice;  
-		}
-		else //票卡为非单程票
-		{
-			int nInHour = pstTravelInfo->nInHour;
-			int nInMin = pstTravelInfo->nInMinute;
-
-			int CompSeven = apiTimeDiff(nInHour, nInMin, 7, 0);  
-			int CompNine = apiTimeDiff(nInHour, nInMin, 9, 0);  
-			int CompSixteenThirty = apiTimeDiff(nInHour, nInMin, 16, 30);  
-			int CompEighteenThirty = apiTimeDiff(nInHour, nInMin, 18, 30);
-			int CompTen= apiTimeDiff(nInHour, nInMin, 10, 0);  
-			int CompEleven = apiTimeDiff(nInHour, nInMin, 11, 0);  
-			int CompFifteen = apiTimeDiff(nInHour, nInMin, 15, 0);                 
-			int CompSixteen = apiTimeDiff(nInHour, nInMin, 16, 0); 
-
-			if (((CompSeven >= 0) && (CompNine < 0)) || ((CompSixteenThirty >= 0) && (CompEighteenThirty < 0))) //特殊非优惠时段
-			{
-				return baseprice;
-			}
-			else if (((CompTen >= 0) && (CompEleven <0))|| ((CompFifteen >= 0) && (CompSixteen < 0))) //特殊优惠时段
-			{
-				return (int)(baseprice*0.5); //出现小数，向下取整
-			}
-			else //非特殊时段
-			{
-				if(CARDTYPE_C == pstTravelInfo->enCardType) //普通卡
-				{
-					return baseprice;  
-				}
-				else if(CARDTYPE_B == pstTravelInfo->enCardType) //老年卡
-				{
-					return (int)(baseprice*0.9); //出现小数，向下取整
-				}
-				else
-				{
-					return -1; //出现错误
-				}
-			}
-		}
+        return GetDifferentStationChargePrice(pstTravelInfo);
 	}
 }
 
@@ -452,7 +575,7 @@ int AddHistoryItemOnListTail(int nChargePrice, TravelInfo_ST* pstTravelInfo )
 	memcpy(historyItem.sOutStation, pstTravelInfo->sOutStation, nOutStationLen);
 
 	
-	if(NULL == PushBackNode(g_historyInfoNodeHead,&historyItem))
+	if(PushBackNode(g_historyInfoNodeHead,&historyItem) == NULL)
 	{
 		return RET_ERROR;
 	}
@@ -467,7 +590,7 @@ int AddHistoryItemOnListTail(int nChargePrice, TravelInfo_ST* pstTravelInfo )
  函 数 名  : Swap
  功能描述  : 交换两个日志信息
  输入参数  : logItemA  日志信息条目A
-           : logItemB  日志信息条目A
+           : logItemB  日志信息条目B
  输出参数  : 与输入参数相同
  返 回 值  : 无
 *****************************************************************************/
@@ -489,7 +612,7 @@ void Swap(LogItem_ST &logItemA, LogItem_ST &logItemB)
 *****************************************************************************/
 void SortByCardID(LogItem_ST logItems[], int nItems)
 {
-	if(NULL == logItems || nItems <= 0)
+	if((logItems == NULL) || (nItems <= 0))
 	{
 		return;
 	}
@@ -521,7 +644,7 @@ void SortByCardID(LogItem_ST logItems[], int nItems)
 *****************************************************************************/
 int IsCheckTimeValid(QueryCond_ST* pstQueryCond, LogItem_ST *logAddr)
 {
-	if(NULL == pstQueryCond || NULL == logAddr)
+	if((pstQueryCond == NULL) || (logAddr == NULL))
 	{
 		apiPrintErrInfo(E99);
 		return RET_ERROR;

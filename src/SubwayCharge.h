@@ -17,9 +17,8 @@
 
 /*宏定义考生根据需要补充*/
 #define MAX_CARD_NUMBERS (10)
-#define MAX_LOG_ITEMS (10)
 
-#define FILENAME ("SubwayCharge.txt")
+#define FILE_NAME ("SubwayCharge.txt")
 
 
 /*结构定义考生根据需要补充*/
@@ -78,28 +77,85 @@ void opDestroyCardProc(int iCardNo);
 
 /*其他函数声明考生根据功能需要补充*/
 
-//计算基本票价
+/*****************************************************************************
+ 函 数 名  : ComputeBasePrice
+ 功能描述  : 计算基本票价
+ 输入参数  : distance  起点站和终点站之间的距离
+ 输出参数  : 无
+ 返 回 值  : 返回由距离计算出的基本票价
+*****************************************************************************/
 int ComputeBasePrice(int distance);
 
-//计算同站进出的情况
+/*****************************************************************************
+ 函 数 名  : GetSameStationChargePrice
+ 功能描述  : 计算起点站和终点站重合时的票价
+ 输入参数  : pstTravelInfo  旅客进出站信息
+ 输出参数  : 无
+ 返 回 值  : 起点站和终点站重合时的票价，若出错则返回-1
+*****************************************************************************/
 int GetSameStationChargePrice(TravelInfo_ST* pstTravelInfo);
 
-//计算扣费票价
-int ComputeChargePrice(int baseprice, TravelInfo_ST* pstTravelInfo);
+/*****************************************************************************
+ 函 数 名  : ComputeChargePrice
+ 功能描述  : 计算扣费票价
+ 输入参数  : baseprice  基本票价
+           : pstTravelInfo  旅客进出站信息
+ 输出参数  : 无
+ 返 回 值  : 扣费票价
+*****************************************************************************/
+int ComputeChargePrice(TravelInfo_ST* pstTravelInfo);
 
-//扣费过程
+/*****************************************************************************
+ 函 数 名  : ChargeProcess
+ 功能描述  : 对旅客进行扣费处理，打印状态信息，写入日志信息
+ 输入参数  : nChargePrice  旅客应付票价
+           : pstTravelInfo  旅客进出站信息
+ 输出参数  : 无
+ 返 回 值  : 扣费成功: RET_OK
+           : 扣费失败: RET_ERROR
+*****************************************************************************/
 int ChargeProcess(int nChargePrice, TravelInfo_ST* pstTravelInfo);
 
-//将扣费记录添加到链表尾函数
+/*****************************************************************************
+ 函 数 名  : AddHistoryItemOnListTail
+ 功能描述  : 将扣费记录添加到链表尾函数
+ 输入参数  : nChargePrice  旅客应付票价
+           : pstTravelInfo  旅客进出站信息
+ 输出参数  : 无
+ 返 回 值  : 写入成功: RET_OK
+           : 写入失败: RET_ERROR
+*****************************************************************************/
 int AddHistoryItemOnListTail(int nChargePrice, TravelInfo_ST* pstTravelInfo );
 
-//结构体交换
+/*****************************************************************************
+ 函 数 名  : Swap
+ 功能描述  : 交换两个日志信息
+ 输入参数  : logItemA  日志信息条目A
+           : logItemB  日志信息条目B
+ 输出参数  : 与输入参数相同
+ 返 回 值  : 无
+*****************************************************************************/
 void Swap(LogItem_ST &logItemA, LogItem_ST &logItemB);
 
-//利用冒泡排序对卡号进行排序
+/*****************************************************************************
+ 函 数 名  : SortByCardID
+ 功能描述  : 利用冒泡排序对卡号进行排序
+ 输入参数  : logItems  日志信息条目数组
+           : nItems  日志信息条目数量
+ 输出参数  : logItems  日志信息条目数组
+ 返 回 值  : 无
+*****************************************************************************/
 void SortByCardID(LogItem_ST logItems[], int nItems);
 
-//出站时间是否大于等于查询起始时间小于等于查询结束时间
+/*****************************************************************************
+ 函 数 名  : IsCheckTimeValid
+ 功能描述  : 工具函数，检验时间有效性，用于opQueryLogProc函数
+ 输入参数  : pstQueryCond  查询扣费日志操作命令参数 结构
+           : logAddr  乘车记录信息 日志记录结构
+ 输出参数  : 无
+ 返 回 值  : 写入成功: RET_OK
+           : 写入失败: RET_ERROR
+*****************************************************************************/
 int IsCheckTimeValid(QueryCond_ST* pstQueryCond, LogItem_ST *logAddr);
 
 #endif /* __SUBWAYCHARGE_H__ */
